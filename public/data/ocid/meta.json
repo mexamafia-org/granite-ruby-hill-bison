@@ -1,0 +1,1 @@
+{"catalog":"OpenCellID MCC 334","sourceFile":"334.json","doctrine":"Published coordinates only. Never invent a tower, CID, or radius.","towerCount":199944,"dropped":0,"radioCounts":{"GSM":51961,"LTE":94381,"NR":1,"UMTS":53601},"bounds":{"minLat":14.6694,"maxLat":32.7154,"minLon":-117.1226,"maxLon":-86.7396},"gridStep":0.5,"buckets":256,"gridTiles":514}
