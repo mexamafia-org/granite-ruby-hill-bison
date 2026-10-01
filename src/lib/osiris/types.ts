@@ -127,6 +127,8 @@ export interface LiveTelemetrySample {
   id: string;
   receivedAt: string;
   phoneDigits: string | null;
+  /** voip: llamada previa. interaction: función del caso. equipment: este navegador. */
+  origin?: "voip" | "interaction" | "equipment";
   gps: {
     lat: number;
     lon: number;

@@ -20,12 +20,16 @@ function download(name: string, content: string, mime: string) {
 }
 
 export function CommandDock({
+  onLocate,
+  onObserve,
   onCommunicate,
   onGps,
   onChangeTarget,
   onToast,
   busy,
 }: {
+  onLocate: (raw: string) => void;
+  onObserve: (tower: CellTower) => void;
   onCommunicate: (input: { channel: CommChannel; note: string; cgi: string; at: string }) => void;
   onGps: () => void;
   onChangeTarget: () => void;
@@ -52,6 +56,8 @@ export function CommandDock({
   const catalogReady = useOsiris((s) => s.catalogReady);
   const setMapFocus = useOsiris((s) => s.setMapFocus);
   const catalogLayer = useOsiris((s) => s.catalogLayer);
+  const publicNote = useOsiris((s) => s.publicNote);
+  const liveTelemetry = useOsiris((s) => s.liveTelemetry);
   const kmlFeatures = useOsiris((s) => s.kmlFeatures);
 
   const [tab, setTab] = useState<SideTab>("torres");
@@ -61,24 +67,14 @@ export function CommandDock({
   const [cgi, setCgi] = useState("");
 
   const towers = useMemo(() => {
-    const query = q.trim().toLowerCase();
     return catalogLayer.filter((t) => {
       if (radioFilter && t.radio !== radioFilter) return false;
       if (operatorFilter && !(t.operator ?? "").toLowerCase().includes(operatorFilter.toLowerCase())) return false;
-      if (!query) return true;
-      return (
-        (t.operator ?? "").toLowerCase().includes(query) ||
-        t.radio.toLowerCase().includes(query) ||
-        String(t.cell).includes(query) ||
-        String(t.area).includes(query)
-      );
+      return true;
     });
-  }, [catalogLayer, operatorFilter, q, radioFilter]);
+  }, [catalogLayer, operatorFilter, radioFilter]);
 
-  const places = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    return kmlFeatures.filter((f) => !query || f.name.toLowerCase().includes(query));
-  }, [kmlFeatures, q]);
+  const places = useMemo(() => kmlFeatures, [kmlFeatures]);
 
   const hideFix =
     !result ||
@@ -90,6 +86,9 @@ export function CommandDock({
   const pos = hideFix
     ? "POSICIÓN NO DETERMINABLE"
     : `${result!.estimatedPosition!.lat.toFixed(6)}, ${result!.estimatedPosition!.lon.toFixed(6)}`;
+
+  const methodLabel =
+    result?.method === "trilateration" || result?.method === "circle_intersection" ? "MATRIX" : (result?.method ?? "none");
 
   const fitView = () => {
     const pts = [
@@ -154,15 +153,34 @@ export function CommandDock({
           {" · "}
           {kmlFeatures.length} lugares · {file?.observations.length ?? 0} observaciones
         </p>
+        {publicNote ? <p className="mt-1 text-[11px] leading-snug text-muted">{publicNote}</p> : null}
       </header>
 
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Buscar lugar, operador, LAC o CID"
-        className="mx-3 mt-2.5 h-10 rounded-[var(--radius-sm)] bg-elevated px-3 text-sm text-fg shadow-[inset_0_0_0_1px_var(--color-border)] placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
-        aria-label="Buscar en el mapa"
-      />
+      <form
+        className="mx-3 mt-2.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setTab("caso");
+          onLocate(q);
+        }}
+      >
+        <label className="sr-only" htmlFor="locate-number">
+          Número a localizar
+        </label>
+        <input
+          id="locate-number"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Número a localizar"
+          inputMode="tel"
+          autoComplete="off"
+          className="h-10 w-full rounded-[var(--radius-sm)] bg-elevated px-3 font-mono text-sm text-fg shadow-[inset_0_0_0_1px_var(--color-border)] placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
+          aria-label="Número a localizar"
+        />
+      </form>
+      <p className="mx-3 mt-1 text-[10px] leading-snug text-muted">
+        Enter lee la telemetría de este número. Entregar una torre usa su medición pública. MATRIX solo con llamada VoIP real.
+      </p>
 
       <div className="mt-2.5 grid grid-cols-3 border-b border-border">
         {(
@@ -270,19 +288,33 @@ export function CommandDock({
               <p className="px-3.5 py-3 text-sm text-muted">Acerca el mapa para cargar torres del catálogo.</p>
             ) : (
               towers.slice(0, 80).map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="block w-full border-b border-border px-3.5 py-2.5 text-left hover:bg-elevated"
-                  onClick={() => setMapFocus({ lat: t.lat, lon: t.lon, zoom: 16 })}
-                >
-                  <p className="text-sm font-semibold" style={{ color: radioVar(t.radio) }}>
-                    {t.operator ?? "Operador no publicado"}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-muted">
-                    {t.radio} · LAC {t.area} · CID {t.cellPublished === false ? "no publicado" : t.cell}
-                  </p>
-                </button>
+                <div key={t.id} className="border-b border-border px-3.5 py-2.5">
+                  <button
+                    type="button"
+                    className="block w-full text-left hover:bg-elevated"
+                    onClick={() => setMapFocus({ lat: t.lat, lon: t.lon, zoom: 16 })}
+                  >
+                    <p className="text-sm font-semibold" style={{ color: radioVar(t.radio) }}>
+                      {t.operator ?? "Operador no publicado"}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted">
+                      {t.radio} · LAC {t.area} · CID {t.cellPublished === false ? "no publicado" : t.cell}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {t.samples > 0 ? `${t.samples} mediciones públicas` : "sin conteo público"}
+                      {" · "}
+                      {t.rangeM != null ? `radio ${t.rangeM} m` : "radio no publicado"}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || t.cellPublished === false}
+                    onClick={() => onObserve(t)}
+                    className="mt-1 h-8 rounded-[var(--radius-sm)] bg-elevated px-2 text-[10px] font-semibold uppercase tracking-wide text-accent disabled:text-muted"
+                  >
+                    {t.cellPublished === false ? "Sin CID publicado" : "Entregar telemetría"}
+                  </button>
+                </div>
               ))
             )}
           </>
@@ -300,7 +332,13 @@ export function CommandDock({
               </button>
             </div>
             <p className="text-xs text-muted">
-              Posición: {pos}. {result?.method ?? "none"} · {result?.confidence ?? "NONE"}
+              Posición: {pos}. {methodLabel} · {result?.confidence ?? "NONE"}
+            </p>
+            <p className="text-[11px] text-muted">
+              Telemetría del caso:{" "}
+              {liveTelemetry.filter((s) => file && s.phoneDigits && (s.phoneDigits === file.id || file.id.endsWith(s.phoneDigits))).length}
+              {" · "}
+              GPS de este equipo: {liveTelemetry.filter((s) => s.origin === "equipment").length}
             </p>
             <p className="text-[11px] leading-relaxed text-muted">{result?.reason}</p>
             <ul className="space-y-2">

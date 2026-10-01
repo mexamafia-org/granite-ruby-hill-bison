@@ -45,6 +45,8 @@ interface OsirisState {
   setMapFocus: (f: MapFocus | null) => void;
   catalogLayer: CellTower[];
   setCatalogLayer: (t: CellTower[]) => void;
+  publicNote: string;
+  setPublicNote: (v: string) => void;
   basemap: "dark" | "imagery" | "streets" | "topo";
   setBasemap: (b: OsirisState["basemap"]) => void;
   radioFilter: string;
@@ -120,6 +122,8 @@ export const useOsiris = create<OsirisState>((set) => ({
   setMapFocus: (mapFocus) => set({ mapFocus }),
   catalogLayer: [],
   setCatalogLayer: (catalogLayer) => set({ catalogLayer }),
+  publicNote: "",
+  setPublicNote: (publicNote) => set({ publicNote }),
   basemap: "imagery",
   setBasemap: (basemap) => set({ basemap }),
   radioFilter: "",

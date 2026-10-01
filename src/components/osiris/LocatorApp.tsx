@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { CommandDock } from "@/components/osiris/CommandDock";
 import { TargetSetup } from "@/components/osiris/TargetSetup";
-import { fetchCatalogMeta, fetchKmlLayer, fetchPhoneEvidence, queryOcidCell } from "@/lib/osiris/data-client";
+import { fetchCatalogMeta, fetchKmlLayer, fetchPhoneEvidence, publishTelemetry, queryOcidCell } from "@/lib/osiris/data-client";
 import { useDossier, type CommChannel } from "@/lib/osiris/dossier";
-import { lookupFromCase, type PhoneEvidenceRecord } from "@/lib/osiris/lookup";
+import { lookupFromCase, isVoipSample, telemetryMatchesPhone, type PhoneEvidenceRecord } from "@/lib/osiris/lookup";
+import { parsePhoneNumber } from "@/lib/osiris/phone";
 import { parseOcidQuery } from "@/lib/osiris/ocid-query";
 import { useOsiris } from "@/lib/osiris/store";
-import type { CellTower, KmlFeature, LiveTelemetrySample, LookupResult, TowerObservation } from "@/lib/osiris/types";
+import type { CellTower, KmlFeature, LiveTelemetrySample, LookupResult, RelationshipToUe, TowerObservation } from "@/lib/osiris/types";
 import { cn } from "@/lib/utils";
 
 type MobilePane = "map" | "case";
@@ -113,6 +114,46 @@ export function LocatorApp() {
     };
   }, [log, setCatalogReady, setConnection, setKmlFeatures]);
 
+  const focused = useRef("");
+  const ingested = useRef(new Set<string>());
+
+  const publishInteraction = async (tower: CellTower, relationship: RelationshipToUe) => {
+    const file = useDossier.getState().active();
+    if (!file) return;
+    if (tower.cellPublished === false || !tower.cell) {
+      log("warn", "Torre sin CID publicado. Queda como infraestructura y no entra como celda.");
+      return;
+    }
+    const at = new Date().toISOString();
+    const sample: LiveTelemetrySample = {
+      id: `interaction-${file.id}-${tower.mcc}-${tower.net}-${tower.area}-${tower.cell}`,
+      receivedAt: at,
+      phoneDigits: file.id,
+      origin: "interaction",
+      gps: null,
+      cells: [
+        {
+          mcc: tower.mcc,
+          net: tower.net,
+          area: tower.area,
+          cell: tower.cell,
+          radio: tower.radio,
+          rangeM: tower.rangeM,
+          relationshipToUe: relationship,
+          measuredAt: at,
+        },
+      ],
+      source: "live_telemetry",
+    };
+    addTelemetry(sample);
+    ingested.current.add(sample.id);
+    try {
+      await publishTelemetry(sample);
+    } catch (err) {
+      log("error", err instanceof Error ? err.message : "No se pudo guardar la telemetría");
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     const pull = async () => {
@@ -121,8 +162,24 @@ export function LocatorApp() {
         if (!res.ok) return;
         const data = (await res.json()) as { samples?: LiveTelemetrySample[] };
         if (cancelled || !Array.isArray(data.samples)) return;
+        const file = useDossier.getState().active();
+        const known = new Set((file?.observations ?? []).map((o) => o.tower.id));
         for (const sample of data.samples) {
-          if (sample && typeof sample.id === "string") addTelemetry(sample);
+          if (!sample || typeof sample.id !== "string") continue;
+          addTelemetry(sample);
+          if (!file || sample.origin === "equipment" || !telemetryMatchesPhone(sample.phoneDigits, { digits: file.id, nationalNumber: file.id })) {
+            continue;
+          }
+          if (ingested.current.has(sample.id)) continue;
+          ingested.current.add(sample.id);
+          for (const cell of sample.cells ?? []) {
+            const id = `ocid:${cell.mcc}-${cell.net}-${cell.area}-${cell.cell}`;
+            if (known.has(id)) continue;
+            const tower = await queryOcidCell(cell);
+            if (cancelled || !tower) continue;
+            known.add(tower.id);
+            observeTower(tower, cell.relationshipToUe ?? (isVoipSample(sample) ? "SERVING" : "SIGNAL_OBSERVED"));
+          }
         }
       } catch {
         /* empty telemetry is the honest state */
@@ -134,15 +191,22 @@ export function LocatorApp() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [addTelemetry]);
-
-  const focused = useRef("");
+  }, [addTelemetry, observeTower]);
 
   useEffect(() => {
     if (!ready || !activeId) return;
     const file = useDossier.getState().active();
     if (!file) return;
-    const observations = toObservations(file);
+    const voipIds = new Set(
+      file.communications
+        .filter((c) => c.channel === "voz" && c.note.startsWith("VoIP") && c.towerId)
+        .map((c) => c.towerId as string),
+    );
+    const scoped =
+      voipIds.size > 0
+        ? { observations: file.observations.filter((o) => voipIds.has(o.tower.id)) }
+        : file;
+    const observations = toObservations(scoped);
     const orphans = file.communications.filter((c) => !c.towerId).length;
     const next = lookupFromCase(file.raw, observations, orphans, {
       kmlFeatures: kmlRef.current,
@@ -151,6 +215,9 @@ export function LocatorApp() {
       catalogTowersByCgi: [],
       selectedTowers: [],
     });
+    if (voipIds.size > 0) {
+      next.reason = `MATRIX sobre la telemetría de la llamada VoIP previa. ${next.reason}`;
+    }
     setResult(next);
     setSelectedTowers(next.associatedTowers);
     const key = `${activeId}:${revision}`;
@@ -165,10 +232,96 @@ export function LocatorApp() {
     window.setTimeout(() => setToast(""), 2500);
   };
 
-  const onObserve = (tower: CellTower) => {
-    observeTower(tower, "SIGNAL_OBSERVED");
-    log("info", `Observación ligada: infraestructura ${tower.radio} ${tower.mcc}-${tower.net}-${tower.area}. No es GPS.`);
-    showToast("Torre ligada al caso. No es la posición del teléfono.");
+  const onLocate = async (raw: string) => {
+    const phone = parsePhoneNumber(raw);
+    const opened = useDossier.getState().openCase(raw);
+    if (!opened.ok) {
+      showToast(opened.reason);
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/telemetry");
+      const data = res.ok ? ((await res.json()) as { samples?: LiveTelemetrySample[] }) : { samples: [] };
+      const samples = Array.isArray(data.samples) ? data.samples : [];
+      for (const sample of samples) {
+        if (sample && typeof sample.id === "string") addTelemetry(sample);
+      }
+      const matched = samples.filter((s) => telemetryMatchesPhone(s.phoneDigits, phone));
+      const voip = matched.filter((s) => isVoipSample(s));
+      let resolved = 0;
+      let unpublished = 0;
+      for (const sample of voip) {
+        for (const cell of sample.cells ?? []) {
+          const tower = await queryOcidCell({
+            mcc: cell.mcc,
+            net: cell.net,
+            area: cell.area,
+            cell: cell.cell,
+          });
+          const cgi = `${cell.mcc}-${cell.net}-${cell.area}-${cell.cell}`;
+          if (!tower) {
+            unpublished += 1;
+            logCommunication({
+              channel: "voz",
+              note: "VoIP previa sin celda publicada",
+              cgi,
+              at: sample.receivedAt || new Date().toISOString(),
+              towerId: null,
+            });
+            continue;
+          }
+          observeTower(tower, cell.relationshipToUe ?? "SERVING");
+          logCommunication({
+            channel: "voz",
+            note: "VoIP previa",
+            cgi,
+            at: sample.receivedAt || new Date().toISOString(),
+            towerId: tower.id,
+          });
+          resolved += 1;
+        }
+      }
+      if (voip.length === 0) {
+        const interactions = matched.filter((s) => s.origin === "interaction").length;
+        log(
+          interactions ? "info" : "warn",
+          interactions
+            ? `Telemetría de interacción: ${interactions}. Sin llamada VoIP. MATRIX no se aplica.`
+            : "Sin telemetría de este número. El catálogo público no se convierte en su posición.",
+        );
+        showToast(interactions ? "Hay interacción. Sin VoIP, MATRIX no corre." : "Sin telemetría de este número.");
+      } else if (resolved === 0) {
+        log("warn", "La llamada VoIP no tiene celdas publicadas. No se inventa torre ni coordenada.");
+        showToast("VoIP sin celdas publicadas. Sin triangulación.");
+      } else {
+        log(
+          "info",
+          `MATRIX: ${resolved} celda(s) de la llamada VoIP en catálogo${unpublished ? `, ${unpublished} sin publicar` : ""}. Una sola torre no es la posición.`,
+        );
+        showToast("Telemetría VoIP ligada. MATRIX evalúa esas torres.");
+      }
+      setPane("map");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onObserve = async (tower: CellTower) => {
+    let published = tower;
+    if (tower.cellPublished !== false && tower.cell) {
+      const fresh = await queryOcidCell({
+        mcc: tower.mcc,
+        net: tower.net,
+        area: tower.area,
+        cell: tower.cell,
+      });
+      if (fresh) published = fresh;
+    }
+    observeTower(published, "SIGNAL_OBSERVED");
+    await publishInteraction(published, "SIGNAL_OBSERVED");
+    log("info", `Telemetría pública entregada: ${published.radio} ${published.mcc}-${published.net}-${published.area}. No es la posición del teléfono.`);
+    showToast("Telemetría de la torre entregada. No es la posición del teléfono.");
     setPane("map");
   };
 
@@ -182,6 +335,7 @@ export function LocatorApp() {
         if (tower) {
           observeTower(tower, "SERVING");
           towerId = tower.id;
+          await publishInteraction(tower, "SERVING");
           log("info", "Comunicación ligada a una celda publicada. Una sola torre sigue sin ser la posición del teléfono.");
         } else {
           log("warn", "Comunicación guardada. Ese CGI no está publicado. No se inventa coordenada.");
@@ -207,6 +361,18 @@ export function LocatorApp() {
         const p = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setOwnGps(p);
         setMapFocus({ ...p, zoom: 14 });
+        const at = new Date().toISOString();
+        const sample: LiveTelemetrySample = {
+          id: `equipment-gps-${at}`,
+          receivedAt: at,
+          phoneDigits: null,
+          origin: "equipment",
+          gps: { lat: p.lat, lon: p.lon, accuracyM: pos.coords.accuracy, source: "GPS", measuredAt: at },
+          cells: [],
+          source: "GPS",
+        };
+        addTelemetry(sample);
+        void publishTelemetry(sample).catch(() => log("warn", "El GPS del equipo no se pudo guardar en el servidor."));
         log("info", "GPS de este equipo registrado. No se asigna al número buscado.");
       },
       (err) => log("error", `GPS denegado o fallido: ${err.message}`),
@@ -257,6 +423,8 @@ export function LocatorApp() {
           <CommandDock
             busy={busy}
             onToast={showToast}
+            onLocate={(raw) => void onLocate(raw)}
+            onObserve={(tower) => void onObserve(tower)}
             onCommunicate={(input) => void onCommunicate(input)}
             onGps={onGps}
             onChangeTarget={() => {

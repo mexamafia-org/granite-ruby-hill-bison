@@ -51,6 +51,7 @@ function FocusController() {
 
 function CatalogLayer() {
   const setCatalogLayer = useOsiris((s) => s.setCatalogLayer);
+  const setPublicNote = useOsiris((s) => s.setPublicNote);
   const log = useOsiris((s) => s.log);
   const timer = useRef<number | null>(null);
   const map = useMapEvents({
@@ -69,6 +70,7 @@ function CatalogLayer() {
     const z = map.getZoom();
     if (z < CATALOG_MIN_ZOOM) {
       setCatalogLayer([]);
+      setPublicNote("Acerca el mapa para leer la telemetría pública de las torres.");
       return;
     }
     const b = map.getBounds();
@@ -80,7 +82,13 @@ function CatalogLayer() {
     const live = z >= CATALOG_LIVE_MIN_ZOOM && km2 <= MAX_LIVE_AREA_KM2;
     try {
       const data = await queryOcidBbox({ west, south, east, north, zoom: z, live });
-      setCatalogLayer(data.towers.slice(0, 800));
+      const towers = data.towers.slice(0, 800);
+      const withRange = towers.filter((t) => t.rangeM != null && t.rangeM > 0).length;
+      const withSamples = towers.filter((t) => t.samples > 0).length;
+      setCatalogLayer(towers);
+      setPublicNote(
+        `${towers.length} torres públicas · ${withRange} con radio · ${withSamples} con mediciones. No se asignan al número.`,
+      );
     } catch (err) {
       log("error", err instanceof Error ? err.message : "Fallo recuadro OpenCellID");
     }
@@ -148,14 +156,15 @@ function TowerDot({
             <p>
               {tower.lat.toFixed(5)}, {tower.lon.toFixed(5)}
             </p>
-            <p>{tower.rangeM != null ? `radio ${tower.rangeM} m` : "radio no publicado"}</p>
-            <p className="mt-1 text-muted">Infraestructura. No es la posición del teléfono.</p>
+            <p>{tower.rangeM != null ? `radio publicado ${tower.rangeM} m` : "radio no publicado"}</p>
+            <p>{tower.samples > 0 ? `${tower.samples} mediciones públicas` : "sin conteo de mediciones"}</p>
+            <p className="mt-1 text-muted">Infraestructura publicada. No es la posición del teléfono.</p>
             <button
               type="button"
               className="mt-2 h-9 rounded-[var(--radius-sm)] bg-accent px-3 text-[11px] font-medium uppercase tracking-[0.12em] text-accent-fg"
               onClick={() => onObserve(tower)}
             >
-              Ligar al caso
+              Entregar telemetría
             </button>
           </div>
         </Popup>

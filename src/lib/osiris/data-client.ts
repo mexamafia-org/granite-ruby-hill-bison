@@ -1,4 +1,4 @@
-import type { CatalogMeta, CellTower, CompactTowerRow } from "./types.ts";
+import type { CatalogMeta, CellTower, CompactTowerRow, LiveTelemetrySample } from "./types.ts";
 import type { PhoneEvidenceRecord } from "./lookup.ts";
 import { fnvBucket, gridKeysForBbox, towerFromRow } from "./catalog.ts";
 
@@ -181,4 +181,14 @@ export async function resolveOcidCells(
     body: JSON.stringify({ cells: missing }),
   });
   return [...out, ...(data.towers ?? [])];
+}
+
+/** Persist a real sample. Does not invent cells or coordinates. */
+export async function publishTelemetry(sample: LiveTelemetrySample): Promise<void> {
+  const res = await fetch("/api/telemetry", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(sample),
+  });
+  if (!res.ok) throw new Error(`Telemetría HTTP ${res.status}`);
 }
