@@ -42,6 +42,30 @@ function latestTelemetry(
   return hits[0] ?? null;
 }
 
+/**
+ * sampleDigits: identificador telefónico que ya trae la muestra. null = no hay.
+ * phone.digits: dígitos E.164 normalizados de un número real.
+ * phone.nationalNumber: número nacional completo, si el plan lo produjo.
+ * Solo igualdad exacta. Sin subcadenas, proximidad ni datos de torre.
+ */
+export function telemetryMatchesPhone(
+  sampleDigits: string | null | undefined,
+  phone: { digits: string; nationalNumber: string | null },
+): boolean {
+  const sample = (sampleDigits ?? "").replace(/\D/g, "");
+  if (sample.length < 8) return false;
+  const e164 = phone.digits.replace(/\D/g, "");
+  const national = (phone.nationalNumber ?? "").replace(/\D/g, "");
+  if (e164.length >= 8 && sample === e164) return true;
+  if (national.length >= 8 && sample === national) return true;
+  return false;
+}
+
+/** VoIP solo si quien produjo la muestra marcó origin "voip". El id no cuenta. */
+export function isVoipSample(sample: { origin?: string | null }): boolean {
+  return sample.origin === "voip";
+}
+
 export function lookupTarget(rawQuery: string, ctx: LookupContext): LookupResult {
   const queriedAt = new Date().toISOString();
   const ocid = parseOcidQuery(rawQuery);

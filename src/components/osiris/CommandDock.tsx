@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { useDossier, type CommChannel } from "@/lib/osiris/dossier";
+import { telemetryMatchesPhone } from "@/lib/osiris/lookup";
+import { parsePhoneNumber } from "@/lib/osiris/phone";
 import { useOsiris } from "@/lib/osiris/store";
 import type { CellTower, RelationshipToUe } from "@/lib/osiris/types";
 import { cn } from "@/lib/utils";
@@ -336,7 +338,7 @@ export function CommandDock({
             </p>
             <p className="text-[11px] text-muted">
               Telemetría del caso:{" "}
-              {liveTelemetry.filter((s) => file && s.phoneDigits && (s.phoneDigits === file.id || file.id.endsWith(s.phoneDigits))).length}
+              {liveTelemetry.filter((s) => file && telemetryMatchesPhone(s.phoneDigits, parsePhoneNumber(file.raw))).length}
               {" · "}
               GPS de este equipo: {liveTelemetry.filter((s) => s.origin === "equipment").length}
             </p>

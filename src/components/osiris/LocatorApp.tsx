@@ -15,25 +15,11 @@ type MobilePane = "map" | "case";
 const mapCanvasPromise = typeof document !== "undefined" ? import("@/components/osiris/MapCanvas") : null;
 
 function focusFromResult(result: LookupResult): { lat: number; lon: number; zoom: number } | null {
-  if (result.estimatedPosition && result.positionKind === "ESTIMATED_POSITION") {
+  if (
+    (result.positionKind === "GPS_REAL" || result.positionKind === "ESTIMATED_POSITION") &&
+    result.estimatedPosition
+  ) {
     return { lat: result.estimatedPosition.lat, lon: result.estimatedPosition.lon, zoom: 14 };
-  }
-  const points = result.trilateration.intersectionPoints;
-  if (points.length > 0) {
-    return { lat: points[0].lat, lon: points[0].lon, zoom: 13 };
-  }
-  const towers = result.associatedTowers.map((o) => o.tower);
-  if (towers.length === 1) return { lat: towers[0].lat, lon: towers[0].lon, zoom: 15 };
-  if (towers.length > 1) {
-    const lats = towers.map((t) => t.lat);
-    const lons = towers.map((t) => t.lon);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const span = Math.max(maxLat - minLat, maxLon - minLon);
-    const zoom = span > 8 ? 5 : span > 3 ? 6 : span > 1 ? 8 : span > 0.3 ? 10 : 12;
-    return { lat: (minLat + maxLat) / 2, lon: (minLon + maxLon) / 2, zoom };
   }
   return null;
 }
@@ -126,9 +112,9 @@ export function LocatorApp() {
     }
     const at = new Date().toISOString();
     const sample: LiveTelemetrySample = {
-      id: `interaction-${file.id}-${tower.mcc}-${tower.net}-${tower.area}-${tower.cell}`,
+      id: `interaction-${tower.mcc}-${tower.net}-${tower.area}-${tower.cell}`,
       receivedAt: at,
-      phoneDigits: file.id,
+      phoneDigits: null,
       origin: "interaction",
       gps: null,
       cells: [
@@ -167,7 +153,7 @@ export function LocatorApp() {
         for (const sample of data.samples) {
           if (!sample || typeof sample.id !== "string") continue;
           addTelemetry(sample);
-          if (!file || sample.origin === "equipment" || !telemetryMatchesPhone(sample.phoneDigits, { digits: file.id, nationalNumber: file.id })) {
+          if (!file || sample.origin === "equipment" || !telemetryMatchesPhone(sample.phoneDigits, parsePhoneNumber(file.raw))) {
             continue;
           }
           if (ingested.current.has(sample.id)) continue;
