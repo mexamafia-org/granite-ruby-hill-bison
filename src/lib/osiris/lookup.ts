@@ -454,29 +454,39 @@ export function lookupFromCase(
     return orphan ? { ...base, reason: `${orphan}${base.reason}` } : base;
   }
   const phone = parsePhoneNumber(raw);
-  const tri = estimateFromObservations(observations);
-  const latest = observations
+  const radio = observations.filter(
+    (o) =>
+      (o.relationshipToUe === "SERVING" || o.relationshipToUe === "NEIGHBOR_MEASURED") &&
+      o.measuredAt != null,
+  );
+  const tri = estimateFromObservations(radio);
+  const latest = radio
     .map((o) => o.measuredAt)
     .filter((v): v is string => Boolean(v))
     .sort()
     .at(-1) ?? null;
+  const infraOnly = radio.length === 0;
   return basePhoneResult(
     raw,
     new Date().toISOString(),
     {
-      positionKind: hitsToKind(tri, observations.length),
-      estimatedPosition: tri.position,
-      method: tri.position ? tri.method : "tower_association",
-      confidence: tri.confidence,
+      positionKind: infraOnly ? (observations.length > 0 ? "INFRASTRUCTURE" : "NOT_DETERMINED") : hitsToKind(tri, radio.length),
+      estimatedPosition: infraOnly ? null : tri.position,
+      method: !infraOnly && tri.position ? tri.method : "tower_association",
+      confidence: infraOnly ? "NONE" : tri.confidence,
       source: "OpenCellID",
       sources: ["OpenCellID"],
       lastUpdate: latest,
       associatedTowers: observations,
       kmlFeatures: [],
-      trilateration: tri,
-      waitingForLiveTelemetry: tri.position == null,
+      trilateration: infraOnly
+        ? { ...tri, position: null, status: "INSUFFICIENT_DATA", method: "tower_association", confidence: "NONE" }
+        : tri,
+      waitingForLiveTelemetry: tri.position == null || infraOnly,
       disclaimer: INFRA_DISCLAIMER,
-      reason: `${orphan}${observations.length} observación(es) de torre ligadas a este número. ${tri.reason}`,
+      reason: infraOnly
+        ? `${orphan}${observations.length} torre(s) públicas en el caso, sin medición de radio con hora para este número. POSICIÓN NO DETERMINABLE.`
+        : `${orphan}${radio.length} medición(es) con hora. ${tri.reason}`,
     },
     phone,
   );

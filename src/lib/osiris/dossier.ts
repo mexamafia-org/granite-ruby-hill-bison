@@ -141,7 +141,7 @@ interface DossierState {
   openCase: (raw: string) => { ok: true; id: string } | { ok: false; reason: string };
   closeActive: () => void;
   active: () => CaseFile | null;
-  observeTower: (tower: CellTower, relationship?: RelationshipToUe) => void;
+  observeTower: (tower: CellTower, relationship?: RelationshipToUe, at?: string) => void;
   setRelationship: (towerId: string, relationship: RelationshipToUe) => void;
   forgetTower: (towerId: string) => void;
   logCommunication: (input: {
@@ -204,8 +204,9 @@ export const useDossier = create<DossierState>((set, get) => ({
     const { cases, activeId } = get();
     return cases.find((c) => c.id === activeId) ?? null;
   },
-  observeTower: (tower, relationship = "SIGNAL_OBSERVED") => {
-    mutate(set, get, (file) => addTowerHit(file, tower, relationship, new Date().toISOString()));
+  observeTower: (tower, relationship = "SIGNAL_OBSERVED", at) => {
+    const stamp = at && Number.isFinite(Date.parse(at)) ? new Date(at).toISOString() : new Date().toISOString();
+    mutate(set, get, (file) => addTowerHit(file, tower, relationship, stamp));
   },
   setRelationship: (towerId, relationship) => {
     mutate(set, get, (file) => patchTowerHit(file, towerId, relationship));

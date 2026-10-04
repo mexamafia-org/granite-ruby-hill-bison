@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { MeasurementRecord } from "./measurement-record.ts";
 import type {
   CatalogMeta,
   CellTower,
@@ -39,6 +40,8 @@ interface OsirisState {
   setKmlVisible: (v: boolean) => void;
   liveTelemetry: LiveTelemetrySample[];
   addTelemetry: (s: LiveTelemetrySample) => void;
+  measurementRecords: MeasurementRecord[];
+  setMeasurementRecords: (rows: MeasurementRecord[]) => void;
   ownGps: GeoPoint | null;
   setOwnGps: (p: GeoPoint | null) => void;
   mapFocus: MapFocus | null;
@@ -116,6 +119,8 @@ export const useOsiris = create<OsirisState>((set) => ({
       if (s.liveTelemetry.some((x) => x.id === sample.id)) return s;
       return { liveTelemetry: [...s.liveTelemetry, sample].slice(-50) };
     }),
+  measurementRecords: [],
+  setMeasurementRecords: (measurementRecords) => set({ measurementRecords }),
   ownGps: null,
   setOwnGps: (ownGps) => set({ ownGps }),
   mapFocus: null,

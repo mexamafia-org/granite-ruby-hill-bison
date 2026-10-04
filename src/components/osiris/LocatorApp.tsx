@@ -65,6 +65,7 @@ export function LocatorApp() {
   const setSelectedTowers = useOsiris((s) => s.setSelectedTowers);
   const log = useOsiris((s) => s.log);
   const addTelemetry = useOsiris((s) => s.addTelemetry);
+  const setMeasurementRecords = useOsiris((s) => s.setMeasurementRecords);
 
   useEffect(() => {
     if (!mapCanvasPromise) return;
@@ -126,7 +127,6 @@ export function LocatorApp() {
           radio: tower.radio,
           rangeM: tower.rangeM,
           relationshipToUe: relationship,
-          measuredAt: at,
         },
       ],
       source: "live_telemetry",
@@ -146,8 +146,9 @@ export function LocatorApp() {
       try {
         const res = await fetch("/api/telemetry");
         if (!res.ok) return;
-        const data = (await res.json()) as { samples?: LiveTelemetrySample[] };
+        const data = (await res.json()) as { samples?: LiveTelemetrySample[]; records?: import("@/lib/osiris/measurement-record").MeasurementRecord[] };
         if (cancelled || !Array.isArray(data.samples)) return;
+        if (Array.isArray(data.records)) setMeasurementRecords(data.records);
         const file = useDossier.getState().active();
         const known = new Set((file?.observations ?? []).map((o) => o.tower.id));
         for (const sample of data.samples) {
@@ -164,7 +165,8 @@ export function LocatorApp() {
             const tower = await queryOcidCell(cell);
             if (cancelled || !tower) continue;
             known.add(tower.id);
-            observeTower(tower, cell.relationshipToUe ?? (isVoipSample(sample) ? "SERVING" : "SIGNAL_OBSERVED"));
+            const when = cell.measuredAt ?? (isVoipSample(sample) ? sample.receivedAt : undefined);
+            observeTower(tower, cell.relationshipToUe ?? (isVoipSample(sample) ? "SERVING" : "SIGNAL_OBSERVED"), when);
           }
         }
       } catch {
@@ -177,7 +179,7 @@ export function LocatorApp() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [addTelemetry, observeTower]);
+  }, [addTelemetry, observeTower, setMeasurementRecords]);
 
   useEffect(() => {
     if (!ready || !activeId) return;
@@ -257,7 +259,7 @@ export function LocatorApp() {
             });
             continue;
           }
-          observeTower(tower, cell.relationshipToUe ?? "SERVING");
+          observeTower(tower, cell.relationshipToUe ?? "SERVING", cell.measuredAt ?? sample.receivedAt);
           logCommunication({
             channel: "voz",
             note: "VoIP previa",

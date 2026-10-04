@@ -60,6 +60,7 @@ export function CommandDock({
   const catalogLayer = useOsiris((s) => s.catalogLayer);
   const publicNote = useOsiris((s) => s.publicNote);
   const liveTelemetry = useOsiris((s) => s.liveTelemetry);
+  const measurementRecords = useOsiris((s) => s.measurementRecords);
   const kmlFeatures = useOsiris((s) => s.kmlFeatures);
 
   const [tab, setTab] = useState<SideTab>("torres");
@@ -344,6 +345,14 @@ export function CommandDock({
             </p>
             <p className="text-[11px] leading-relaxed text-muted">{result?.reason}</p>
             <ul className="space-y-2">
+              {measurementRecords
+                .filter((r) => file && telemetryMatchesPhone(r.phoneDigits, parsePhoneNumber(file.raw)))
+                .map((r) => (
+                  <li key={`${r.registeredAt}-${r.id}`} className="rounded-[var(--radius-sm)] bg-elevated p-2 text-[11px] text-muted">
+                    <p>Registro del archivo: {r.registeredAt}</p>
+                    <p>{r.measuredAt ? `Hora de la medición: ${r.measuredAt}` : "La muestra no trae hora de medición de radio."}</p>
+                  </li>
+                ))}
               {file?.observations.map((obs) => (
                 <li key={obs.id} className="rounded-[var(--radius-sm)] bg-elevated p-2">
                   <button
@@ -357,6 +366,11 @@ export function CommandDock({
                     </p>
                     <p className="text-[11px] text-muted">
                       {obs.tower.radio} · {obs.tower.rangeM != null ? `${obs.tower.rangeM} m` : "radio no publicado"}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {obs.tower.updated != null
+                        ? `Hora pública de la torre: ${new Date(obs.tower.updated * 1000).toISOString()}`
+                        : "La fuente pública no trae hora de la torre"}
                     </p>
                   </button>
                   <div className="mt-1 flex gap-2">
