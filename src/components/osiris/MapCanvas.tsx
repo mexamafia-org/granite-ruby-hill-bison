@@ -5,6 +5,7 @@ import { queryOcidBbox } from "@/lib/osiris/data-client";
 import { CATALOG_LIVE_MIN_ZOOM, CATALOG_MIN_ZOOM, MAX_LIVE_AREA_KM2 } from "@/lib/osiris/catalog";
 import { bboxAreaKm2 } from "@/lib/osiris/geo";
 import { useOsiris } from "@/lib/osiris/store";
+import { useDossier } from "@/lib/osiris/dossier";
 import type { CellTower } from "@/lib/osiris/types";
 
 const HOME: [number, number] = [21.88, -102.29];
@@ -203,6 +204,7 @@ export function MapCanvas({ onObserve }: { onObserve: (tower: CellTower) => void
 
   const [picked, setPicked] = useState("Pulsa el mapa");
   const intersections = result?.trilateration.intersectionPoints ?? [];
+  const wifi = useDossier((s) => s.cases.find((c) => c.id === s.activeId)?.wifi ?? []);
 
   return (
     <div className="relative h-full min-h-[280px] w-full overflow-hidden bg-bg">
@@ -224,6 +226,25 @@ export function MapCanvas({ onObserve }: { onObserve: (tower: CellTower) => void
           : null}
         {associated.map((t) => (
           <TowerDot key={`hit-${t.id}`} tower={t} emphasized showRange onObserve={onObserve} />
+        ))}
+        {wifi.map((hit) => (
+          <CircleMarker
+            key={hit.id}
+            center={[hit.ap.lat, hit.ap.lon]}
+            radius={6}
+            pathOptions={{ color: "var(--color-lte)", fillColor: "var(--color-lte)", fillOpacity: 0.85, weight: 1 }}
+          >
+            <Popup>
+              <div className="font-mono text-xs">
+                <p>Red abierta publicada</p>
+                <p>{hit.ap.ssid ?? "sin nombre"} · {hit.ap.bssid}</p>
+                <p>{hit.ap.lat.toFixed(5)}, {hit.ap.lon.toFixed(5)}</p>
+                <p>Anotada: {hit.at}</p>
+                <p>{hit.ap.lastUpdate ? `Registro público: ${hit.ap.lastUpdate}` : "Sin hora pública"}</p>
+                <p className="text-muted">Punto de la red. No es la posición del teléfono.</p>
+              </div>
+            </Popup>
+          </CircleMarker>
         ))}
         {intersections.length === 2 ? (
           <Polyline

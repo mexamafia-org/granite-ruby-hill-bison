@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { parsePhoneNumber } from "./phone.ts";
 import type { CellTower, RelationshipToUe } from "./types.ts";
+import type { PublicWifiAp } from "./wifi.ts";
 
 export type CommChannel = "voz" | "sms" | "datos" | "otro";
 
@@ -20,6 +21,12 @@ export interface CommHit {
   towerId: string | null;
 }
 
+export interface WifiHit {
+  id: string;
+  at: string;
+  ap: PublicWifiAp;
+}
+
 export interface CaseFile {
   id: string;
   raw: string;
@@ -27,6 +34,7 @@ export interface CaseFile {
   updatedAt: string;
   observations: TowerHit[];
   communications: CommHit[];
+  wifi: WifiHit[];
 }
 
 const CASES_KEY = "osiris.cases.v1";
@@ -70,6 +78,7 @@ export function upsertCase(cases: CaseFile[], raw: string, id: string, now: stri
       updatedAt: now,
       observations: [],
       communications: [],
+      wifi: [],
     },
     ...cases,
   ].slice(0, 24);
@@ -151,6 +160,11 @@ interface DossierState {
     at: string;
     towerId: string | null;
   }) => void;
+  noteWifi: (ap: PublicWifiAp, at: string) => void;
+}
+
+function withWifi(file: CaseFile): CaseFile {
+  return { ...file, wifi: Array.isArray(file.wifi) ? file.wifi : [] };
 }
 
 function persist(cases: CaseFile[], activeId: string | null) {
@@ -167,9 +181,10 @@ function mutate(
 ) {
   const { cases, activeId, revision } = get();
   if (!activeId) return;
-  const current = cases.find((c) => c.id === activeId);
-  if (!current) return;
-  const nextCases = cases.map((c) => (c.id === activeId ? recipe(c) : c));
+  const found = cases.find((c) => c.id === activeId);
+  if (!found) return;
+  const current = withWifi(found);
+  const nextCases = cases.map((c) => (c.id === activeId ? recipe(current) : c));
   persist(nextCases, activeId);
   set({ cases: nextCases, revision: revision + 1 });
 }
@@ -180,9 +195,9 @@ export const useDossier = create<DossierState>((set, get) => ({
   activeId: null,
   revision: 0,
   hydrate: () => {
-    const cases = readJson<CaseFile[]>(CASES_KEY, []).filter(
-      (c) => c && typeof c.id === "string" && Array.isArray(c.observations),
-    );
+    const cases = readJson<CaseFile[]>(CASES_KEY, [])
+      .filter((c) => c && typeof c.id === "string" && Array.isArray(c.observations))
+      .map(withWifi);
     const activeId = readJson<string | null>(ACTIVE_KEY, null);
     const valid = activeId && cases.some((c) => c.id === activeId) ? activeId : null;
     set({ ready: true, cases, activeId: valid });
@@ -216,5 +231,16 @@ export const useDossier = create<DossierState>((set, get) => ({
   },
   logCommunication: (input) => {
     mutate(set, get, (file) => addCommHit(file, input));
+  },
+  noteWifi: (ap, at) => {
+    const stamp = Number.isFinite(Date.parse(at)) ? new Date(at).toISOString() : new Date().toISOString();
+    mutate(set, get, (file) => {
+      const hit: WifiHit = { id: `wifi-${ap.bssid}`, at: stamp, ap };
+      return {
+        ...file,
+        updatedAt: stamp,
+        wifi: [hit, ...file.wifi.filter((row) => row.ap.bssid !== ap.bssid)].slice(0, 40),
+      };
+    });
   },
 }));

@@ -26,6 +26,7 @@ export function CommandDock({
   onObserve,
   onCommunicate,
   onMeasure,
+  onWifi,
   onGps,
   onChangeTarget,
   onToast,
@@ -35,6 +36,7 @@ export function CommandDock({
   onObserve: (tower: CellTower) => void;
   onCommunicate: (input: { channel: CommChannel; note: string; cgi: string; at: string }) => void;
   onMeasure: (input: { cgi: string; ta: string; at: string }) => void;
+  onWifi: (bssid: string) => void;
   onGps: () => void;
   onChangeTarget: () => void;
   onToast: (message: string) => void;
@@ -71,6 +73,7 @@ export function CommandDock({
   const [note, setNote] = useState("");
   const [cgi, setCgi] = useState("");
   const [ta, setTa] = useState("");
+  const [bssid, setBssid] = useState("");
 
   const towers = useMemo(() => {
     return catalogLayer.filter((t) => {
@@ -395,6 +398,17 @@ export function CommandDock({
                   </div>
                 </li>
               ))}
+              {(file?.wifi ?? []).map((hit) => (
+                <li key={hit.id} className="rounded-[var(--radius-sm)] bg-elevated p-2 text-[11px] text-muted">
+                  <button type="button" className="w-full text-left" onClick={() => setMapFocus({ lat: hit.ap.lat, lon: hit.ap.lon, zoom: 17 })}>
+                    <p>Red abierta {hit.ap.ssid ?? "sin nombre"}</p>
+                    <p className="font-mono">{hit.ap.bssid}</p>
+                    <p>Anotada: {hit.at}</p>
+                    <p>{hit.ap.lastUpdate ? `Registro público: ${hit.ap.lastUpdate}` : "Sin hora pública"}</p>
+                    <p>Punto de la red. No es la posición del teléfono.</p>
+                  </button>
+                </li>
+              ))}
               {file?.communications.map((c) => (
                 <li key={c.id} className="rounded-[var(--radius-sm)] bg-elevated p-2 text-[11px] text-muted">
                   {c.channel} · {c.cgi || "sin CGI"} · {c.towerId ? "celda publicada" : "sin coordenada"}
@@ -464,6 +478,21 @@ export function CommandDock({
               </div>
               <button type="button" onClick={onGps} className="h-10 rounded-[var(--radius-sm)] bg-elevated text-xs text-fg">
                 GPS equipo
+              </button>
+              <input
+                value={bssid}
+                onChange={(e) => setBssid(e.target.value)}
+                placeholder="BSSID de red abierta"
+                aria-label="BSSID de red abierta"
+                className="h-10 rounded-[var(--radius-sm)] bg-elevated px-2 font-mono text-xs placeholder:text-muted"
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onWifi(bssid.trim())}
+                className="h-10 rounded-[var(--radius-sm)] bg-elevated text-xs font-semibold text-fg"
+              >
+                Consultar red abierta
               </button>
             </form>
           </div>

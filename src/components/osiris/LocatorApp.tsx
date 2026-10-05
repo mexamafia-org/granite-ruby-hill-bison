@@ -53,6 +53,7 @@ export function LocatorApp() {
   const hydrate = useDossier((s) => s.hydrate);
   const observeTower = useDossier((s) => s.observeTower);
   const logCommunication = useDossier((s) => s.logCommunication);
+  const noteWifi = useDossier((s) => s.noteWifi);
   const closeActive = useDossier((s) => s.closeActive);
 
   const liveTelemetry = useOsiris((s) => s.liveTelemetry);
@@ -413,6 +414,42 @@ export function LocatorApp() {
     }
   };
 
+  const onWifi = async (bssid: string) => {
+    const file = useDossier.getState().active();
+    if (!file) {
+      showToast("Primero ingresa el número del caso.");
+      return;
+    }
+    const at = new Date().toISOString();
+    setBusy(true);
+    try {
+      const phone = parsePhoneNumber(file.raw);
+      const res = await fetch("/api/wifi", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          bssid,
+          phoneDigits: phone.digits.length >= 8 ? phone.digits : null,
+          measuredAt: at,
+        }),
+      });
+      const data = (await res.json()) as { ap?: { bssid: string; ssid: string | null; lat: number; lon: number; encryption: "none"; lastUpdate: string | null; source: "WiGLE" } | null; reason?: string; registeredAt?: string };
+      if (!data.ap) {
+        log("warn", data.reason ?? "Red abierta no publicada. Sin coordenada.");
+        showToast(data.reason ?? "Sin red publicada.");
+        return;
+      }
+      noteWifi(data.ap, data.registeredAt ?? at);
+      setMapFocus({ lat: data.ap.lat, lon: data.ap.lon, zoom: 17 });
+      log("info", `Red abierta ${data.ap.bssid} publicada. El punto es de la red, no del teléfono.`);
+      showToast("Red abierta anotada. No es la posición del teléfono.");
+    } catch (err) {
+      log("error", err instanceof Error ? err.message : "Fallo la consulta WiFi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onGps = () => {
     if (!navigator.geolocation) {
       log("error", "Geolocalización no disponible en este navegador");
@@ -489,6 +526,7 @@ export function LocatorApp() {
             onObserve={(tower) => void onObserve(tower)}
             onCommunicate={(input) => void onCommunicate(input)}
             onMeasure={(input) => void onMeasure(input)}
+            onWifi={(bssid) => void onWifi(bssid)}
             onGps={onGps}
             onChangeTarget={() => {
               closeActive();

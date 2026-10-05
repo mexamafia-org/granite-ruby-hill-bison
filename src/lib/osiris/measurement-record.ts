@@ -1,3 +1,5 @@
+import { apFromWigle, type PublicWifiAp } from "./wifi.ts";
+
 /** A received sample, stored with the clock time of registration. No coordinates are added. */
 
 export interface MeasurementCell {
@@ -20,6 +22,8 @@ export interface MeasurementRecord {
   phoneDigits: string | null;
   origin: string | null;
   cells: MeasurementCell[];
+  /** Published open network, if the sample carried one. Not a phone position. */
+  wifi: PublicWifiAp | null;
 }
 
 function iso(value: unknown): string | null {
@@ -76,5 +80,6 @@ export function buildMeasurementRecord(sample: unknown, registeredAt: string): M
     phoneDigits: digits.length >= 8 ? digits : null,
     origin: typeof row.origin === "string" ? row.origin : null,
     cells,
+    wifi: apFromWigle(row.wifi),
   };
 }

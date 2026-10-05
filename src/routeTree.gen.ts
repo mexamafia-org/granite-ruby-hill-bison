@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiOcidRouteImport } from './routes/api/ocid'
 import { Route as ApiTelemetryRouteImport } from './routes/api/telemetry'
+import { Route as ApiWifiRouteImport } from './routes/api/wifi'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const ApiTelemetryRoute = ApiTelemetryRouteImport.update({
   path: '/api/telemetry',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWifiRoute = ApiWifiRouteImport.update({
+  id: '/api/wifi',
+  path: '/api/wifi',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/ocid': typeof ApiOcidRoute
   '/api/telemetry': typeof ApiTelemetryRoute
+  '/api/wifi': typeof ApiWifiRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/ocid': typeof ApiOcidRoute
   '/api/telemetry': typeof ApiTelemetryRoute
+  '/api/wifi': typeof ApiWifiRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/ocid': typeof ApiOcidRoute
   '/api/telemetry': typeof ApiTelemetryRoute
+  '/api/wifi': typeof ApiWifiRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/ocid' | '/api/telemetry'
+  fullPaths: '/' | '/api/ocid' | '/api/telemetry' | '/api/wifi'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/ocid' | '/api/telemetry'
-  id: '__root__' | '/' | '/api/ocid' | '/api/telemetry'
+  to: '/' | '/api/ocid' | '/api/telemetry' | '/api/wifi'
+  id: '__root__' | '/' | '/api/ocid' | '/api/telemetry' | '/api/wifi'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiOcidRoute: typeof ApiOcidRoute
   ApiTelemetryRoute: typeof ApiTelemetryRoute
+  ApiWifiRoute: typeof ApiWifiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTelemetryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/wifi': {
+      id: '/api/wifi'
+      path: '/api/wifi'
+      fullPath: '/api/wifi'
+      preLoaderRoute: typeof ApiWifiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiOcidRoute: ApiOcidRoute,
   ApiTelemetryRoute: ApiTelemetryRoute,
+  ApiWifiRoute: ApiWifiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
