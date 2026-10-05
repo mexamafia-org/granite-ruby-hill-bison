@@ -127,8 +127,8 @@ export interface LiveTelemetrySample {
   id: string;
   receivedAt: string;
   phoneDigits: string | null;
-  /** voip: llamada previa. interaction: función del caso. equipment: este navegador. */
-  origin?: "voip" | "interaction" | "equipment";
+  /** voip: llamada previa. interaction: torre pública sin teléfono. equipment: este navegador. measurement: medición registrada en el caso. */
+  origin?: "voip" | "interaction" | "equipment" | "measurement";
   gps: {
     lat: number;
     lon: number;
@@ -147,6 +147,8 @@ export interface LiveTelemetrySample {
     rsrqDb?: number | null;
     sinrDb?: number | null;
     rangeM?: number | null;
+    /** Timing advance as reported. Absent means it was not measured. */
+    ta?: number | null;
     relationshipToUe?: RelationshipToUe;
     measuredAt?: string;
   }>;

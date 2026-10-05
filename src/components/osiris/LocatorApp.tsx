@@ -6,6 +6,7 @@ import { useDossier, type CommChannel } from "@/lib/osiris/dossier";
 import { lookupFromCase, isVoipSample, telemetryMatchesPhone, type PhoneEvidenceRecord } from "@/lib/osiris/lookup";
 import { parsePhoneNumber } from "@/lib/osiris/phone";
 import { parseOcidQuery } from "@/lib/osiris/ocid-query";
+import { radiusFromEvidence } from "@/lib/osiris/radio-range";
 import { useOsiris } from "@/lib/osiris/store";
 import type { CellTower, KmlFeature, LiveTelemetrySample, LookupResult, RelationshipToUe, TowerObservation } from "@/lib/osiris/types";
 import { cn } from "@/lib/utils";
@@ -321,10 +322,9 @@ export function LocatorApp() {
       if (parsed?.kind === "cell") {
         const tower = await queryOcidCell(parsed);
         if (tower) {
-          observeTower(tower, "SERVING");
+          observeTower(tower, "SIGNAL_OBSERVED");
           towerId = tower.id;
-          await publishInteraction(tower, "SERVING");
-          log("info", "Comunicación ligada a una celda publicada. Una sola torre sigue sin ser la posición del teléfono.");
+          log("info", "Comunicación anotada sobre una celda publicada. No es una medición de radio ni la posición del teléfono.");
         } else {
           log("warn", "Comunicación guardada. Ese CGI no está publicado. No se inventa coordenada.");
         }
@@ -334,6 +334,80 @@ export function LocatorApp() {
         log("info", "Comunicación registrada sin celda. POSICIÓN NO DETERMINABLE hasta una observación.");
       }
       logCommunication({ ...input, towerId });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onMeasure = async (input: { cgi: string; ta: string; at: string }) => {
+    const file = useDossier.getState().active();
+    if (!file) {
+      showToast("Primero ingresa el número del caso.");
+      return;
+    }
+    const parsed = parseOcidQuery(input.cgi);
+    if (!parsed || parsed.kind !== "cell") {
+      log("warn", "La medición necesita un CGI publicado. No se inventa celda.");
+      showToast("CGI no reconocido.");
+      return;
+    }
+    const ta = input.ta === "" ? null : Number(input.ta);
+    if (ta != null && !Number.isInteger(ta)) {
+      showToast("El timing advance tiene que ser un entero, o ir vacío.");
+      return;
+    }
+    const measuredAt = Number.isFinite(Date.parse(input.at)) ? new Date(input.at).toISOString() : new Date().toISOString();
+    setBusy(true);
+    try {
+      const tower = await queryOcidCell(parsed);
+      if (!tower) {
+        log("warn", "Ese CGI no está publicado. No se inventa coordenada.");
+        showToast("CGI sin torre publicada.");
+        return;
+      }
+      const radius = radiusFromEvidence({ radio: String(tower.radio), ta, publishedRangeM: tower.rangeM });
+      if (radius.rangeM == null) {
+        log("warn", "Sin timing advance válido y sin radio publicado. POSICIÓN NO DETERMINABLE.");
+        showToast("Sin radio utilizable.");
+        return;
+      }
+      observeTower({ ...tower, rangeM: radius.rangeM }, "SERVING", measuredAt);
+      const phone = parsePhoneNumber(file.raw);
+      const sample: LiveTelemetrySample = {
+        id: `measurement-${parsed.mcc}-${parsed.net}-${parsed.area}-${parsed.cell}-${measuredAt}`,
+        receivedAt: measuredAt,
+        phoneDigits: phone.digits.length >= 8 ? phone.digits : null,
+        origin: "measurement",
+        gps: null,
+        cells: [
+          {
+            mcc: parsed.mcc,
+            net: parsed.net,
+            area: parsed.area,
+            cell: parsed.cell,
+            radio: String(tower.radio),
+            rangeM: radius.rangeM,
+            ta,
+            relationshipToUe: "SERVING",
+            measuredAt,
+          },
+        ],
+        source: "live_telemetry",
+      };
+      addTelemetry(sample);
+      ingested.current.add(sample.id);
+      try {
+        await publishTelemetry(sample);
+      } catch (err) {
+        log("error", err instanceof Error ? err.message : "No se pudo guardar el archivo de la medición");
+      }
+      log(
+        "info",
+        radius.source === "ta"
+          ? `Medición ${measuredAt}. Timing advance, radio ${Math.round(radius.rangeM)} m. Una sola celda no es la posición.`
+          : `Medición ${measuredAt}. Radio publicado ${Math.round(radius.rangeM)} m. Una sola celda no es la posición.`,
+      );
+      showToast("Medición registrada. Hace falta más de una celda con hora para un punto.");
     } finally {
       setBusy(false);
     }
@@ -414,6 +488,7 @@ export function LocatorApp() {
             onLocate={(raw) => void onLocate(raw)}
             onObserve={(tower) => void onObserve(tower)}
             onCommunicate={(input) => void onCommunicate(input)}
+            onMeasure={(input) => void onMeasure(input)}
             onGps={onGps}
             onChangeTarget={() => {
               closeActive();

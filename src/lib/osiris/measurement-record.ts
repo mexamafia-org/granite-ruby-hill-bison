@@ -7,6 +7,7 @@ export interface MeasurementCell {
   cell: number;
   measuredAt: string | null;
   rangeM: number | null;
+  ta: number | null;
 }
 
 export interface MeasurementRecord {
@@ -51,6 +52,7 @@ export function buildMeasurementRecord(sample: unknown, registeredAt: string): M
       const area = num(c.area);
       const cell = num(c.cell);
       if (mcc == null || net == null || area == null || cell == null) continue;
+      const ta = num(c.ta);
       cells.push({
         mcc,
         net,
@@ -58,6 +60,7 @@ export function buildMeasurementRecord(sample: unknown, registeredAt: string): M
         cell,
         measuredAt: iso(c.measuredAt),
         rangeM: num(c.rangeM),
+        ta: ta != null && Number.isInteger(ta) ? ta : null,
       });
     }
   }

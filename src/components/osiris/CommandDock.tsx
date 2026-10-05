@@ -25,6 +25,7 @@ export function CommandDock({
   onLocate,
   onObserve,
   onCommunicate,
+  onMeasure,
   onGps,
   onChangeTarget,
   onToast,
@@ -33,6 +34,7 @@ export function CommandDock({
   onLocate: (raw: string) => void;
   onObserve: (tower: CellTower) => void;
   onCommunicate: (input: { channel: CommChannel; note: string; cgi: string; at: string }) => void;
+  onMeasure: (input: { cgi: string; ta: string; at: string }) => void;
   onGps: () => void;
   onChangeTarget: () => void;
   onToast: (message: string) => void;
@@ -68,6 +70,7 @@ export function CommandDock({
   const [channel, setChannel] = useState<CommChannel>("voz");
   const [note, setNote] = useState("");
   const [cgi, setCgi] = useState("");
+  const [ta, setTa] = useState("");
 
   const towers = useMemo(() => {
     return catalogLayer.filter((t) => {
@@ -182,7 +185,7 @@ export function CommandDock({
         />
       </form>
       <p className="mx-3 mt-1 text-[10px] leading-snug text-muted">
-        Enter lee la telemetría de este número. Entregar una torre usa su medición pública. MATRIX solo con llamada VoIP real.
+        Enter lee mediciones de este número. Una celda no es la posición. MATRIX solo cierra con varias mediciones reales.
       </p>
 
       <div className="mt-2.5 grid grid-cols-3 border-b border-border">
@@ -438,14 +441,30 @@ export function CommandDock({
                 aria-label="Nota de la comunicación"
                 className="h-10 rounded-[var(--radius-sm)] bg-elevated px-2 text-xs placeholder:text-muted"
               />
+              <input
+                value={ta}
+                onChange={(e) => setTa(e.target.value)}
+                placeholder="TA si se midió, si no vacío"
+                inputMode="numeric"
+                aria-label="Timing advance"
+                className="h-10 rounded-[var(--radius-sm)] bg-elevated px-2 font-mono text-xs placeholder:text-muted"
+              />
               <div className="grid grid-cols-2 gap-2">
-                <button type="submit" disabled={busy} className="h-10 rounded-[var(--radius-sm)] bg-accent text-xs font-semibold text-accent-fg">
-                  Guardar
+                <button type="submit" disabled={busy} className="h-10 rounded-[var(--radius-sm)] bg-elevated text-xs font-semibold text-fg">
+                  Guardar nota
                 </button>
-                <button type="button" onClick={onGps} className="h-10 rounded-[var(--radius-sm)] bg-elevated text-xs text-fg">
-                  GPS equipo
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onMeasure({ cgi: cgi.trim(), ta: ta.trim(), at: new Date().toISOString() })}
+                  className="h-10 rounded-[var(--radius-sm)] bg-accent text-xs font-semibold text-accent-fg"
+                >
+                  Registrar medición
                 </button>
               </div>
+              <button type="button" onClick={onGps} className="h-10 rounded-[var(--radius-sm)] bg-elevated text-xs text-fg">
+                GPS equipo
+              </button>
             </form>
           </div>
         ) : null}
