@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
+import { CameraWindow } from "@/components/osiris/CameraWindow";
 import { CommandDock } from "@/components/osiris/CommandDock";
 import { TargetSetup } from "@/components/osiris/TargetSetup";
 import { fetchCatalogMeta, fetchKmlLayer, fetchPhoneEvidence, publishTelemetry, queryOcidCell } from "@/lib/osiris/data-client";
@@ -42,6 +43,7 @@ function toObservations(file: { observations: Array<{ at: string; relationship: 
 export function LocatorApp() {
   const [MapCanvas, setMapCanvas] = useState<ComponentType<{ onObserve: (tower: CellTower) => void }> | null>(null);
   const [pane, setPane] = useState<MobilePane>("map");
+  const [camerasOpen, setCamerasOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const kmlRef = useRef<KmlFeature[]>([]);
@@ -527,6 +529,10 @@ export function LocatorApp() {
             onCommunicate={(input) => void onCommunicate(input)}
             onMeasure={(input) => void onMeasure(input)}
             onWifi={(bssid) => void onWifi(bssid)}
+            onOpenCameras={() => {
+              setCamerasOpen(true);
+              setPane("map");
+            }}
             onGps={onGps}
             onChangeTarget={() => {
               closeActive();
@@ -534,12 +540,18 @@ export function LocatorApp() {
             }}
           />
         </div>
-        <div className={cn("h-full min-h-0", pane === "map" ? "block" : "hidden md:block")}>
+        <div className={cn("relative h-full min-h-0", pane === "map" ? "block" : "hidden md:block")}>
           {MapCanvas ? (
             <MapCanvas onObserve={onObserve} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted">Cargando mapa</div>
           )}
+          {camerasOpen ? (
+            <CameraWindow
+              onClose={() => setCamerasOpen(false)}
+              onFocus={(lat, lon) => setMapFocus({ lat, lon, zoom: 17 })}
+            />
+          ) : null}
         </div>
       </div>
       <nav className="grid grid-cols-2 gap-1 border-t border-border bg-surface p-1 md:hidden">

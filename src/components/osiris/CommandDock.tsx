@@ -27,6 +27,7 @@ export function CommandDock({
   onCommunicate,
   onMeasure,
   onWifi,
+  onOpenCameras,
   onGps,
   onChangeTarget,
   onToast,
@@ -37,6 +38,7 @@ export function CommandDock({
   onCommunicate: (input: { channel: CommChannel; note: string; cgi: string; at: string }) => void;
   onMeasure: (input: { cgi: string; ta: string; at: string }) => void;
   onWifi: (bssid: string) => void;
+  onOpenCameras: () => void;
   onGps: () => void;
   onChangeTarget: () => void;
   onToast: (message: string) => void;
@@ -499,7 +501,11 @@ export function CommandDock({
         ) : null}
       </div>
 
-      <footer className="grid grid-cols-4 gap-1.5 border-t border-border p-2.5">
+      <footer className="grid gap-1.5 border-t border-border p-2.5">
+        <button type="button" onClick={onOpenCameras} className="h-9 rounded-[var(--radius-sm)] bg-accent text-[10px] font-semibold uppercase tracking-wide text-accent-fg">
+          Cámaras públicas
+        </button>
+        <div className="grid grid-cols-4 gap-1.5">
         <button type="button" onClick={fitView} className="h-9 rounded-[var(--radius-sm)] bg-elevated text-[10px] font-semibold uppercase tracking-wide text-umts">
           Ver todo
         </button>
@@ -512,6 +518,7 @@ export function CommandDock({
         <button type="button" onClick={exportCsv} className="h-9 rounded-[var(--radius-sm)] bg-elevated text-[10px] font-semibold uppercase tracking-wide text-danger">
           CSV
         </button>
+        </div>
       </footer>
     </aside>
   );
