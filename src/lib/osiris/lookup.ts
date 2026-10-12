@@ -426,7 +426,7 @@ function lookupPhone(raw: string, ctx: LookupContext, queriedAt: string): Lookup
     reason: notes
       ? `${notes} POSICIÓN NO DETERMINABLE.`
       : phone.planValid
-        ? `Número reconocido por el plan de numeración (${phone.country ?? "país"} · ${phone.numberType ?? "tipo desconocido"}). El plan ITU no es una coordenada. Sin CGI asociado, sin KML, sin telemetría. POSICIÓN NO DETERMINABLE.`
+        ? `Número reconocido por el plan de numeración (${phone.country ?? "país"} · ${phone.numberType ?? "tipo desconocido"}). OpenCellID y WiGLE están conectados como infraestructura: no publican la celda de un teléfono. Sin una medición de este número, POSICIÓN NO DETERMINABLE.`
         : "Sin asociación celular, sin KML, sin telemetría en vivo. POSICIÓN NO DETERMINABLE.",
   });
 }

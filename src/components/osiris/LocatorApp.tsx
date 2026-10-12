@@ -234,13 +234,21 @@ export function LocatorApp() {
     setBusy(true);
     try {
       const res = await fetch("/api/telemetry");
-      const data = res.ok ? ((await res.json()) as { samples?: LiveTelemetrySample[] }) : { samples: [] };
+      const data = res.ok
+        ? ((await res.json()) as {
+            samples?: LiveTelemetrySample[];
+            records?: { phoneDigits: string | null; measuredAt: string | null; cells?: LiveTelemetrySample["cells"] }[];
+          })
+        : { samples: [] as LiveTelemetrySample[], records: [] };
       const samples = Array.isArray(data.samples) ? data.samples : [];
+      const records = Array.isArray(data.records) ? data.records : [];
       for (const sample of samples) {
         if (sample && typeof sample.id === "string") addTelemetry(sample);
       }
-      const matched = samples.filter((s) => telemetryMatchesPhone(s.phoneDigits, phone));
-      const voip = matched.filter((s) => isVoipSample(s));
+      const voip = samples.filter((s) => isVoipSample(s) && telemetryMatchesPhone(s.phoneDigits, phone));
+      const filed = records.filter(
+        (r) => telemetryMatchesPhone(r.phoneDigits, phone) && r.measuredAt && (r.cells?.length ?? 0) > 0,
+      );
       let resolved = 0;
       let unpublished = 0;
       for (const sample of voip) {
@@ -274,24 +282,33 @@ export function LocatorApp() {
           resolved += 1;
         }
       }
-      if (voip.length === 0) {
-        const interactions = matched.filter((s) => s.origin === "interaction").length;
+      for (const record of filed) {
+        for (const cell of record.cells ?? []) {
+          const tower = await queryOcidCell({ mcc: cell.mcc, net: cell.net, area: cell.area, cell: cell.cell });
+          if (!tower || !record.measuredAt) continue;
+          observeTower({ ...tower, rangeM: cell.rangeM ?? tower.rangeM }, cell.relationshipToUe ?? "SERVING", record.measuredAt);
+          resolved += 1;
+        }
+      }
+      const catalogCount = useOsiris.getState().catalogCount;
+      if (voip.length === 0 && filed.length === 0) {
         log(
-          interactions ? "info" : "warn",
-          interactions
-            ? `Telemetría de interacción: ${interactions}. Sin llamada VoIP. MATRIX no se aplica.`
-            : "Sin telemetría de este número. El catálogo público no se convierte en su posición.",
+          "warn",
+          `OpenCellID responde con ${catalogCount.toLocaleString("es-MX")} celdas públicas. Ninguna publicación identifica este número.`,
         );
-        showToast(interactions ? "Hay interacción. Sin VoIP, MATRIX no corre." : "Sin telemetría de este número.");
+        showToast("La fuente pública no trae la celda de este número.");
       } else if (resolved === 0) {
         log("warn", "La llamada VoIP no tiene celdas publicadas. No se inventa torre ni coordenada.");
         showToast("VoIP sin celdas publicadas. Sin triangulación.");
-      } else {
+      } else if (voip.length > 0) {
         log(
           "info",
           `MATRIX: ${resolved} celda(s) de la llamada VoIP en catálogo${unpublished ? `, ${unpublished} sin publicar` : ""}. Una sola torre no es la posición.`,
         );
         showToast("Telemetría VoIP ligada. MATRIX evalúa esas torres.");
+      } else {
+        log("info", `${resolved} medición(es) de este número resueltas en OpenCellID. Una sola celda no es la posición.`);
+        showToast("Medición registrada resuelta en el catálogo público.");
       }
       setPane("map");
     } finally {
